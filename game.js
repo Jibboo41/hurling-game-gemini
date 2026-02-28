@@ -182,13 +182,16 @@ function createHurley() {
     shape.lineTo(0, 0);
     const bossGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.07, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02 });
     const boss = new THREE.Mesh(bossGeo, woodMat);
-    boss.rotation.z = Math.PI / 1.05; boss.rotation.y = Math.PI / 2;
-    boss.position.set(-0.035, -0.15, -0.05); group.add(boss);
+    boss.rotation.z = -Math.PI / 1.05; // Flipped Z-rotation
+    boss.rotation.y = -Math.PI / 2;    // Flipped Y-rotation
+    boss.position.set(0.035, -0.15, 0.05); // Offset accordingly
+    group.add(boss);
     
     return group;
 }
 const hurleyGroup = createHurley();
-hurleyGroup.position.set(0.6, -0.5, -0.9); hurleyGroup.rotation.x = -Math.PI / 4;
+hurleyGroup.position.set(0.6, -0.5, -0.9); 
+hurleyGroup.rotation.x = Math.PI / 4; // Adjusted tilt
 camera.add(hurleyGroup);
 
 // --- Inputs ---
