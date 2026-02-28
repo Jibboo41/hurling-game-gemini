@@ -32,7 +32,6 @@ const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
 scene.add(ambientLight);
 const sunLight = new THREE.DirectionalLight(0xffffff, 1.3);
 sunLight.position.set(100, 200, 100); sunLight.castShadow = true;
-sunLight.shadow.mapSize.width = 4096; sunLight.shadow.mapSize.height = 4096;
 scene.add(sunLight);
 
 // --- Particle System ---
@@ -113,7 +112,10 @@ function createHurley() {
     boss.rotation.z = -Math.PI/1.05; boss.rotation.y = -Math.PI/2; boss.position.set(0.035, -0.15, 0.05); group.add(boss);
     return group;
 }
-const hurleyGroup = createHurley(); hurleyGroup.position.set(0.6, -0.5, -0.9); hurleyGroup.rotation.x = Math.PI/4; camera.add(hurleyGroup);
+const hurleyGroup = createHurley(); 
+hurleyGroup.position.set(0.6, -0.6, -0.9); 
+hurleyGroup.rotation.set(Math.PI/4, 0, -Math.PI/6); // Initial slant
+camera.add(hurleyGroup);
 
 // --- Inputs ---
 const controls = new PointerLockControls(camera, document.body);
@@ -139,13 +141,13 @@ function performStrike() {
             const finalStrength = (0.2 + (finalPower / 100) * 1.4) * boost;
             const dir = new THREE.Vector3(); camera.getWorldDirection(dir); dir.y += 0.35; dir.normalize();
             state.isSoloing = false; ballPhys.vel.copy(dir.multiplyScalar(finalStrength));
-            if (finalPower > 80) state.shake = 10; // Big impact shake
+            if (finalPower > 80) state.shake = 10;
         }
         setTimeout(() => {
             state.swingState = 0;
             document.getElementById('power-bar').style.width = '0%';
-        }, 300);
-    }, 50); // Small delay to match the forward swing motion
+        }, 400);
+    }, 60);
 }
 
 // --- Loop ---
@@ -155,30 +157,34 @@ function update() {
         dir.normalize().applyQuaternion(camera.quaternion); dir.y = 0;
         const speed = keys['ShiftLeft'] ? 0.35 : 0.22;
         controls.getObject().position.add(dir.multiplyScalar(speed));
-        if (state.isSoloing && speed > 0.3 && Math.random() < 0.005) state.isSoloing = false;
     }
 
-    // Animation Logic
+    // Horizontal Animation Logic
+    const idleY = 0; const idleZ = -Math.PI/6; const idleX = Math.PI/4;
+    
     if (state.isCharging) {
         state.power = Math.min(state.maxPower, state.power + state.chargeRate);
         document.getElementById('power-bar').style.width = `${state.power}%`;
-        // Pull back based on power
-        hurleyGroup.rotation.x = (Math.PI/4) + (state.power / 100) * 1.5;
-        hurleyGroup.position.z = -0.9 - (state.power / 100) * 0.2;
+        // Horizontal Wind-up (pull back to the right)
+        hurleyGroup.rotation.y = THREE.MathUtils.lerp(hurleyGroup.rotation.y, Math.PI/3, 0.1);
+        hurleyGroup.rotation.z = THREE.MathUtils.lerp(hurleyGroup.rotation.z, -Math.PI/2, 0.1);
+        hurleyGroup.position.x = 0.8;
     } else if (state.swingState === 2) {
-        // Snap forward
-        hurleyGroup.rotation.x -= 0.5;
-        hurleyGroup.position.z += 0.1;
+        // Horizontal Snap (Across the screen to the left)
+        hurleyGroup.rotation.y -= 0.6;
+        hurleyGroup.rotation.z += 1.0;
+        hurleyGroup.position.x -= 0.3;
     } else if (state.swingState === 0) {
         // Return to idle
-        hurleyGroup.rotation.x = THREE.MathUtils.lerp(hurleyGroup.rotation.x, Math.PI/4, 0.1);
-        hurleyGroup.position.z = THREE.MathUtils.lerp(hurleyGroup.position.z, -0.9, 0.1);
+        hurleyGroup.rotation.y = THREE.MathUtils.lerp(hurleyGroup.rotation.y, idleY, 0.1);
+        hurleyGroup.rotation.z = THREE.MathUtils.lerp(hurleyGroup.rotation.z, idleZ, 0.1);
+        hurleyGroup.rotation.x = THREE.MathUtils.lerp(hurleyGroup.rotation.x, idleX, 0.1);
+        hurleyGroup.position.x = THREE.MathUtils.lerp(hurleyGroup.position.x, 0.6, 0.1);
     }
 
-    // Camera Shake
     if (state.shake > 0) {
-        camera.position.x += (Math.random() - 0.5) * 0.1 * (state.shake/10);
-        camera.position.y += (Math.random() - 0.5) * 0.1 * (state.shake/10);
+        camera.position.x += (Math.random()-0.5)*0.1*(state.shake/10);
+        camera.position.y += (Math.random()-0.5)*0.1*(state.shake/10);
         state.shake *= 0.9;
     }
 
