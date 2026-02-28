@@ -15,30 +15,71 @@ const state = {
 // --- Scene Setup ---
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
-scene.fog = new THREE.Fog(0x87ceeb, 0, 500);
+scene.fog = new THREE.Fog(0x87ceeb, 0, 700);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1500);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 document.body.appendChild(renderer.domElement);
 
 // --- Lighting ---
-const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
 scene.add(ambientLight);
 
-const sunLight = new THREE.DirectionalLight(0xffffff, 1.0);
-sunLight.position.set(50, 100, 50);
+const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
+sunLight.position.set(100, 150, 100);
 sunLight.castShadow = true;
-sunLight.shadow.mapSize.width = 2048;
-sunLight.shadow.mapSize.height = 2048;
-sunLight.shadow.camera.left = -100;
-sunLight.shadow.camera.right = 100;
-sunLight.shadow.camera.top = 100;
-sunLight.shadow.camera.bottom = -100;
+sunLight.shadow.mapSize.width = 4096;
+sunLight.shadow.mapSize.height = 4096;
+sunLight.shadow.camera.left = -150;
+sunLight.shadow.camera.right = 150;
+sunLight.shadow.camera.top = 150;
+sunLight.shadow.camera.bottom = -150;
 scene.add(sunLight);
 
-// --- Procedural Grass Texture ---
+// --- Croke Park Stadium Stands ---
+function createStadium() {
+    const standMat = new THREE.MeshPhongMaterial({ color: 0x555555 });
+    const seatMat = new THREE.MeshPhongMaterial({ color: 0x2244aa }); // Blue seats like Croke Park
+
+    const createStand = (width, depth, x, z, rot) => {
+        const standGroup = new THREE.Group();
+        
+        // Concrete base
+        const baseGeo = new THREE.BoxGeometry(width, 10, depth);
+        const base = new THREE.Mesh(baseGeo, standMat);
+        standGroup.add(base);
+
+        // Tiers (simplified steps)
+        for(let i=1; i<=5; i++) {
+            const tierGeo = new THREE.BoxGeometry(width, 4, depth - (i * 5));
+            const tier = new THREE.Mesh(tierGeo, seatMat);
+            tier.position.y = 5 + (i * 4);
+            tier.position.z = -(i * 2.5);
+            standGroup.add(tier);
+        }
+
+        standGroup.position.set(x, 5, z);
+        standGroup.rotation.y = rot;
+        scene.add(standGroup);
+    };
+
+    // Hogan Stand (Side)
+    createStand(200, 60, -75, 0, Math.PI / 2);
+    // Cusack Stand (Side)
+    createStand(200, 60, 75, 0, -Math.PI / 2);
+    // Davin Stand (End)
+    createStand(120, 60, 0, 110, 0);
+    // Hill 16 (The famous terrace - simpler)
+    const hillGeo = new THREE.BoxGeometry(100, 5, 40);
+    const hill = new THREE.Mesh(hillGeo, standMat);
+    hill.position.set(0, 2.5, -100);
+    scene.add(hill);
+}
+createStadium();
+
+// --- Procedural Grass ---
 function createGrassTexture() {
     const canvas = document.createElement('canvas');
     canvas.width = 512; canvas.height = 512;
@@ -115,6 +156,26 @@ function createGoal(zPos) {
 createGoal(-pitchLength / 2);
 createGoal(pitchLength / 2);
 
+// --- Goalkeeper AI ---
+function createKeeper(zPos) {
+    const keeperGroup = new THREE.Group();
+    const jerseyMat = new THREE.MeshPhongMaterial({ color: 0xffee00 }); // Yellow keeper jersey
+    const limbMat = new THREE.MeshPhongMaterial({ color: 0xccaa88 });
+
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.0, 0.3), jerseyMat);
+    body.position.y = 1.3;
+    keeperGroup.add(body);
+
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), limbMat);
+    head.position.y = 2.0;
+    keeperGroup.add(head);
+
+    keeperGroup.position.set(0, 0, zPos + (zPos > 0 ? -1 : 1));
+    scene.add(keeperGroup);
+    return keeperGroup;
+}
+const keeper1 = createKeeper(-pitchLength / 2);
+
 // --- Sliotar ---
 const ballGeo = new THREE.SphereGeometry(0.15, 32, 32);
 const ballMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
@@ -147,7 +208,6 @@ document.addEventListener('mouseup', (e) => {
     if (state.isCharging && e.button === 0) {
         strikeBall();
         state.isCharging = false;
-        // Visual reset of power bar
         document.getElementById('power-bar').style.width = '0%';
     }
 });
@@ -184,19 +244,14 @@ camera.add(hurleyGroup);
 function strikeBall() {
     const dist = camera.position.distanceTo(ball.position);
     if (dist < 3.5) {
-        // Animation
         const initialRot = hurleyGroup.rotation.x;
         hurleyGroup.rotation.x -= 0.8;
         setTimeout(() => hurleyGroup.rotation.x = initialRot, 150);
-
-        // Power calculation (min 0.2, max 1.2)
-        const finalStrength = 0.2 + (state.power / 100) * 1.0;
-        
+        const finalStrength = 0.2 + (state.power / 100) * 1.2;
         const dir = new THREE.Vector3();
         camera.getWorldDirection(dir);
         dir.y += 0.35;
         dir.normalize();
-        
         ballPhys.vel.copy(dir.multiplyScalar(finalStrength));
     }
 }
@@ -214,10 +269,23 @@ function update() {
         controls.getObject().position.add(dir.multiplyScalar(moveSpeed));
     }
 
-    // Power Meter Update
     if (state.isCharging) {
         state.power = Math.min(state.maxPower, state.power + state.chargeRate);
         document.getElementById('power-bar').style.width = `${state.power}%`;
+    }
+
+    // Goalkeeper AI
+    const keeperXLimit = 3.0;
+    const keeperSpeed = 0.08;
+    const targetX = THREE.MathUtils.clamp(ball.position.x, -keeperXLimit, keeperXLimit);
+    if (keeper1.position.x < targetX) keeper1.position.x += keeperSpeed;
+    if (keeper1.position.x > targetX) keeper1.position.x -= keeperSpeed;
+
+    // Goalkeeper Save Check
+    const distToKeeper = ball.position.distanceTo(keeper1.position);
+    if (distToKeeper < 0.8 && ballPhys.vel.z < 0) {
+        ballPhys.vel.z *= -0.5; // Block
+        ballPhys.vel.y += 0.2;
     }
 
     // Ball Physics
@@ -230,7 +298,7 @@ function update() {
         ballPhys.vel.z *= ballPhys.friction;
     }
 
-    if (Math.abs(ball.position.x) > pitchWidth/2 + 10 || Math.abs(ball.position.z) > pitchLength/2 + 10) resetBall();
+    if (Math.abs(ball.position.x) > pitchWidth/2 + 10 || Math.abs(ball.position.z) > pitchLength/2 + 20) resetBall();
 
     // Scoring
     const checkGoal = (goalZ) => {
