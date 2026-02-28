@@ -5,7 +5,11 @@ import { PointerLockControls } from 'three/addons/controls/PointerLockControls.j
 const state = {
     score: 0,
     ballActive: true,
-    lastStrikeTime: 0
+    lastStrikeTime: 0,
+    power: 0,
+    isCharging: false,
+    maxPower: 100,
+    chargeRate: 2.5
 };
 
 // --- Scene Setup ---
@@ -37,20 +41,16 @@ scene.add(sunLight);
 // --- Procedural Grass Texture ---
 function createGrassTexture() {
     const canvas = document.createElement('canvas');
-    canvas.width = 512;
-    canvas.height = 512;
-    const context = canvas.getContext('2d');
-    context.fillStyle = '#2d5e1e';
-    context.fillRect(0, 0, 512, 512);
-    
+    canvas.width = 512; canvas.height = 512;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#2d5e1e';
+    ctx.fillRect(0, 0, 512, 512);
     for (let i = 0; i < 20000; i++) {
-        context.fillStyle = `rgba(45, ${94 + Math.random() * 20}, 30, ${0.1 + Math.random() * 0.2})`;
-        context.fillRect(Math.random() * 512, Math.random() * 512, 2, 8);
+        ctx.fillStyle = `rgba(45, ${94 + Math.random() * 20}, 30, ${0.1 + Math.random() * 0.2})`;
+        ctx.fillRect(Math.random() * 512, Math.random() * 512, 2, 8);
     }
-    
     const texture = new THREE.CanvasTexture(canvas);
-    texture.wrapS = THREE.RepeatWrapping;
-    texture.wrapT = THREE.RepeatWrapping;
+    texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
     texture.repeat.set(20, 40);
     return texture;
 }
@@ -59,10 +59,7 @@ function createGrassTexture() {
 const pitchWidth = 90;
 const pitchLength = 145;
 const grassGeo = new THREE.PlaneGeometry(pitchWidth + 40, pitchLength + 40);
-const grassMat = new THREE.MeshPhongMaterial({ 
-    map: createGrassTexture(),
-    shininess: 5
-});
+const grassMat = new THREE.MeshPhongMaterial({ map: createGrassTexture(), shininess: 5 });
 const pitch = new THREE.Mesh(grassGeo, grassMat);
 pitch.rotation.x = -Math.PI / 2;
 pitch.receiveShadow = true;
@@ -77,63 +74,48 @@ const createLine = (w, h, x, z) => {
     mesh.position.set(x, 0.02, z);
     scene.add(mesh);
 };
-
-// Perimeter
-createLine(pitchWidth, 0.6, 0, pitchLength/2); // End line 1
-createLine(pitchWidth, 0.6, 0, -pitchLength/2); // End line 2
-createLine(0.6, pitchLength, pitchWidth/2, 0); // Side line 1
-createLine(0.6, pitchLength, -pitchWidth/2, 0); // Side line 2
-
-// GAA Markings (13m, 20m, 45m, 65m)
-const marks = [13, 20, 45, 65];
-marks.forEach(m => {
+createLine(pitchWidth, 0.6, 0, pitchLength/2);
+createLine(pitchWidth, 0.6, 0, -pitchLength/2);
+createLine(0.6, pitchLength, pitchWidth/2, 0);
+createLine(0.6, pitchLength, -pitchWidth/2, 0);
+[13, 20, 45, 65].forEach(m => {
     createLine(pitchWidth, 0.3, 0, pitchLength/2 - m);
     createLine(pitchWidth, 0.3, 0, -pitchLength/2 + m);
 });
-createLine(pitchWidth, 0.4, 0, 0); // Halfway line
+createLine(pitchWidth, 0.4, 0, 0);
 
-// --- Goalposts (H-shape) ---
+// --- Goalposts ---
 function createGoal(zPos) {
     const goalGroup = new THREE.Group();
     const postMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
     const netMat = new THREE.MeshPhongMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
-
-    // Uprights
     const uprightGeo = new THREE.CylinderGeometry(0.15, 0.15, 14);
     const leftPost = new THREE.Mesh(uprightGeo, postMat);
     leftPost.position.set(-3.25, 7, 0);
     leftPost.castShadow = true;
     goalGroup.add(leftPost);
-
     const rightPost = new THREE.Mesh(uprightGeo, postMat);
     rightPost.position.set(3.25, 7, 0);
     rightPost.castShadow = true;
     goalGroup.add(rightPost);
-
-    // Crossbar
     const crossbarGeo = new THREE.CylinderGeometry(0.12, 0.12, 6.5);
     const crossbar = new THREE.Mesh(crossbarGeo, postMat);
     crossbar.rotation.z = Math.PI / 2;
     crossbar.position.set(0, 2.5, 0);
     crossbar.castShadow = true;
     goalGroup.add(crossbar);
-
-    // Net
     const netGeo = new THREE.BoxGeometry(6.5, 2.5, 2.5);
     const net = new THREE.Mesh(netGeo, netMat);
-    const offset = zPos > 0 ? 1.25 : -1.25;
-    net.position.set(0, 1.25, offset);
+    net.position.set(0, 1.25, zPos > 0 ? 1.25 : -1.25);
     goalGroup.add(net);
-
     goalGroup.position.z = zPos;
     scene.add(goalGroup);
     return goalGroup;
 }
+createGoal(-pitchLength / 2);
+createGoal(pitchLength / 2);
 
-const goal1 = createGoal(-pitchLength / 2);
-const goal2 = createGoal(pitchLength / 2);
-
-// --- Sliotar (Ball) ---
+// --- Sliotar ---
 const ballGeo = new THREE.SphereGeometry(0.15, 32, 32);
 const ballMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
 const ball = new THREE.Mesh(ballGeo, ballMat);
@@ -141,12 +123,7 @@ ball.castShadow = true;
 ball.position.set(0, 5, 0);
 scene.add(ball);
 
-const ballPhys = {
-    vel: new THREE.Vector3(0, 0, 0),
-    gravity: -0.015,
-    bounce: 0.65,
-    friction: 0.99
-};
+const ballPhys = { vel: new THREE.Vector3(0, 0, 0), gravity: -0.015, bounce: 0.65, friction: 0.99 };
 
 function resetBall() {
     ball.position.set(0, 5, 0);
@@ -157,55 +134,48 @@ function resetBall() {
 const controls = new PointerLockControls(camera, document.body);
 scene.add(controls.getObject());
 
-document.addEventListener('click', () => {
+document.addEventListener('mousedown', (e) => {
     if (!controls.isLocked) {
         controls.lock();
-    } else {
+    } else if (e.button === 0) {
+        state.isCharging = true;
+        state.power = 0;
+    }
+});
+
+document.addEventListener('mouseup', (e) => {
+    if (state.isCharging && e.button === 0) {
         strikeBall();
+        state.isCharging = false;
+        // Visual reset of power bar
+        document.getElementById('power-bar').style.width = '0%';
     }
 });
 
 const keys = {};
-document.addEventListener('keydown', (e) => { 
-    keys[e.code] = true; 
-    if(e.code === 'KeyR') resetBall();
-});
+document.addEventListener('keydown', (e) => { keys[e.code] = true; if(e.code === 'KeyR') resetBall(); });
 document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
 const moveSpeed = 0.25;
 
-// --- Realistic Hurley ---
+// --- Hurley ---
 function createHurley() {
     const group = new THREE.Group();
     const woodMat = new THREE.MeshPhongMaterial({ color: 0xe3c9a6 });
-
-    // Handle (Cylinder)
     const handleGeo = new THREE.CylinderGeometry(0.035, 0.045, 1.0, 12);
     const handle = new THREE.Mesh(handleGeo, woodMat);
     handle.position.y = 0.4;
     group.add(handle);
-
-    // Realistic Boss (the curved head)
     const shape = new THREE.Shape();
-    shape.moveTo(0, 0);
-    shape.lineTo(0.1, 0);
-    shape.quadraticCurveTo(0.25, 0.05, 0.3, 0.2);
-    shape.lineTo(0.3, 0.35);
-    shape.quadraticCurveTo(0.15, 0.4, 0, 0.3);
-    shape.lineTo(0, 0);
-
-    const extrudeSettings = { depth: 0.08, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02 };
-    const bossGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    shape.moveTo(0, 0); shape.lineTo(0.1, 0); shape.quadraticCurveTo(0.25, 0.05, 0.3, 0.2);
+    shape.lineTo(0.3, 0.35); shape.quadraticCurveTo(0.15, 0.4, 0, 0.3); shape.lineTo(0, 0);
+    const bossGeo = new THREE.ExtrudeGeometry(shape, { depth: 0.08, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02 });
     const boss = new THREE.Mesh(bossGeo, woodMat);
-    
-    boss.rotation.z = Math.PI / 1.1;
-    boss.rotation.y = Math.PI / 2;
+    boss.rotation.z = Math.PI / 1.1; boss.rotation.y = Math.PI / 2;
     boss.position.set(-0.04, -0.15, -0.05);
     group.add(boss);
-
     return group;
 }
-
 const hurleyGroup = createHurley();
 hurleyGroup.position.set(0.6, -0.5, -0.8);
 hurleyGroup.rotation.x = -Math.PI / 4;
@@ -214,19 +184,20 @@ camera.add(hurleyGroup);
 function strikeBall() {
     const dist = camera.position.distanceTo(ball.position);
     if (dist < 3.5) {
-        // Swing animation
+        // Animation
         const initialRot = hurleyGroup.rotation.x;
         hurleyGroup.rotation.x -= 0.8;
         setTimeout(() => hurleyGroup.rotation.x = initialRot, 150);
 
-        // Physics
+        // Power calculation (min 0.2, max 1.2)
+        const finalStrength = 0.2 + (state.power / 100) * 1.0;
+        
         const dir = new THREE.Vector3();
         camera.getWorldDirection(dir);
-        dir.y += 0.35; // Loft
+        dir.y += 0.35;
         dir.normalize();
         
-        const strength = 0.9;
-        ballPhys.vel.copy(dir.multiplyScalar(strength));
+        ballPhys.vel.copy(dir.multiplyScalar(finalStrength));
     }
 }
 
@@ -243,11 +214,15 @@ function update() {
         controls.getObject().position.add(dir.multiplyScalar(moveSpeed));
     }
 
+    // Power Meter Update
+    if (state.isCharging) {
+        state.power = Math.min(state.maxPower, state.power + state.chargeRate);
+        document.getElementById('power-bar').style.width = `${state.power}%`;
+    }
+
     // Ball Physics
     ballPhys.vel.y += ballPhys.gravity;
     ball.position.add(ballPhys.vel);
-
-    // Ground collision
     if (ball.position.y < 0.15) {
         ball.position.y = 0.15;
         ballPhys.vel.y *= -ballPhys.bounce;
@@ -255,34 +230,23 @@ function update() {
         ballPhys.vel.z *= ballPhys.friction;
     }
 
-    // Boundary check
-    if (Math.abs(ball.position.x) > pitchWidth/2 + 10 || Math.abs(ball.position.z) > pitchLength/2 + 10) {
-        resetBall();
-    }
+    if (Math.abs(ball.position.x) > pitchWidth/2 + 10 || Math.abs(ball.position.z) > pitchLength/2 + 10) resetBall();
 
     // Scoring
-    const checkGoal = (goalZ, isPositive) => {
-        const distZ = Math.abs(ball.position.z - goalZ);
-        if (distZ < 0.6 && Math.abs(ball.position.x) < 3.25) {
+    const checkGoal = (goalZ) => {
+        if (Math.abs(ball.position.z - goalZ) < 0.6 && Math.abs(ball.position.x) < 3.25) {
             if (ball.position.y > 0.15 && ball.position.y < 2.5) {
-                state.score += 3;
-                updateScore();
-                resetBall();
+                state.score += 3; updateScore(); resetBall();
             } else if (ball.position.y >= 2.5 && ball.position.y < 12) {
-                state.score += 1;
-                updateScore();
-                resetBall();
+                state.score += 1; updateScore(); resetBall();
             }
         }
     };
-
-    checkGoal(-pitchLength / 2, false);
-    checkGoal(pitchLength / 2, true);
+    checkGoal(-pitchLength / 2);
+    checkGoal(pitchLength / 2);
 }
 
-function updateScore() {
-    document.getElementById('score').innerText = state.score;
-}
+function updateScore() { document.getElementById('score').innerText = state.score; }
 
 function animate() {
     requestAnimationFrame(animate);
