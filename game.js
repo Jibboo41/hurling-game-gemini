@@ -13,7 +13,11 @@ const state = {
     isSoloing: false,
     soloWobble: 0,
     swingState: 0,
-    shake: 0
+    shake: 0,
+    // Camera State
+    cameraYaw: 0,
+    cameraPitch: -0.3,
+    cameraDist: 7
 };
 
 // --- Scene Setup ---
@@ -32,7 +36,6 @@ const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
 scene.add(ambientLight);
 const sunLight = new THREE.DirectionalLight(0xffffff, 1.3);
 sunLight.position.set(100, 200, 100); sunLight.castShadow = true;
-sunLight.shadow.mapSize.width = 2048; sunLight.shadow.mapSize.height = 2048;
 scene.add(sunLight);
 
 // --- Particle System ---
@@ -64,31 +67,15 @@ function createWoodTexture() {
 // --- Player Character ---
 function createPlayer() {
     const group = new THREE.Group();
-    const kitMat = new THREE.MeshPhongMaterial({ color: 0x113399 }); // Blue Kit
+    const kitMat = new THREE.MeshPhongMaterial({ color: 0x113399 });
     const skinMat = new THREE.MeshPhongMaterial({ color: 0xccaa88 });
-    
-    // Body
     const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.1, 0.4), kitMat);
-    body.position.y = 1.1;
-    body.castShadow = true;
-    group.add(body);
-
-    // Head
+    body.position.y = 1.1; body.castShadow = true; group.add(body);
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16), skinMat);
-    head.position.y = 1.9;
-    head.castShadow = true;
-    group.add(head);
-
-    // Arms (Simplified)
+    head.position.y = 1.9; head.castShadow = true; group.add(head);
     const armGeo = new THREE.BoxGeometry(0.2, 0.7, 0.2);
-    const leftArm = new THREE.Mesh(armGeo, skinMat);
-    leftArm.position.set(-0.4, 1.3, 0);
-    group.add(leftArm);
-    
-    const rightArm = new THREE.Mesh(armGeo, skinMat);
-    rightArm.position.set(0.4, 1.3, 0.2);
-    group.add(rightArm);
-
+    const leftArm = new THREE.Mesh(armGeo, skinMat); leftArm.position.set(-0.4, 1.3, 0); group.add(leftArm);
+    const rightArm = new THREE.Mesh(armGeo, skinMat); rightArm.position.set(0.4, 1.3, 0.2); group.add(rightArm);
     return group;
 }
 const player = createPlayer();
@@ -105,7 +92,7 @@ function createHurley() {
     return group;
 }
 const hurleyGroup = createHurley();
-hurleyGroup.position.set(0.5, 1.0, 0.5); // Attach to player hand area
+hurleyGroup.position.set(0.5, 1.0, 0.5);
 player.add(hurleyGroup);
 
 // --- Stadium & Pitch ---
@@ -150,13 +137,22 @@ const ball = new THREE.Mesh(new THREE.SphereGeometry(0.15, 32, 32), new THREE.Me
 const ballPhys = { vel: new THREE.Vector3(0, 0, 0), gravity: -0.015, bounce: 0.65, friction: 0.985 };
 function resetBall() { state.isSoloing = false; ball.position.set(0, 5, 0); ballPhys.vel.set(0, 0, 0); }
 
-// --- Inputs & Third Person Setup ---
+// --- Inputs & Controls ---
 const controls = new PointerLockControls(camera, document.body);
 const keys = {};
 document.addEventListener('mousedown', (e) => { if(!controls.isLocked) controls.lock(); else if(e.button === 0) { state.isCharging = true; state.power = 0; state.swingState = 1; } });
 document.addEventListener('mouseup', (e) => { if(state.isCharging && e.button === 0) { performStrike(); } });
 document.addEventListener('keydown', (e) => { keys[e.code] = true; if(e.code === 'KeyR') resetBall(); if(e.code === 'KeyE') toggleSolo(); });
 document.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+// Use mousemove directly for camera rotation to avoid conflict with PointerLockControls manual rotation
+document.addEventListener('mousemove', (e) => {
+    if (controls.isLocked) {
+        state.cameraYaw -= e.movementX * 0.003;
+        state.cameraPitch -= e.movementY * 0.003;
+        state.cameraPitch = Math.max(-1.4, Math.min(0.2, state.cameraPitch)); // Clamp pitch
+    }
+});
 
 function toggleSolo() { if(state.isSoloing) state.isSoloing = false; else if(player.position.distanceTo(ball.position) < 3) { state.isSoloing = true; createParticles(ball.position.clone(), 10, 0xffffff, 0.04, 0.1); } }
 
@@ -179,28 +175,29 @@ function performStrike() {
 // --- Loop ---
 function update() {
     if (controls.isLocked) {
-        const dir = new THREE.Vector3();
-        if (keys['KeyW']) dir.z -= 1; if (keys['KeyS']) dir.z += 1; if (keys['KeyA']) dir.x -= 1; if (keys['KeyD']) dir.x += 1;
+        const moveDir = new THREE.Vector3();
+        if (keys['KeyW']) moveDir.z -= 1; if (keys['KeyS']) moveDir.z += 1; if (keys['KeyA']) moveDir.x -= 1; if (keys['KeyD']) moveDir.x += 1;
         
-        // Character Movement
-        const camDir = new THREE.Vector3(); camera.getWorldDirection(camDir); camDir.y = 0; camDir.normalize();
-        const camRight = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), camDir).negate();
-        
-        const moveVector = new THREE.Vector3().addScaledVector(camDir, -dir.z).addScaledVector(camRight, dir.x);
-        if(moveVector.length() > 0) {
-            moveVector.normalize();
+        if(moveDir.length() > 0) {
+            moveDir.normalize();
+            // Rotate moveDir to match cameraYaw
+            const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), state.cameraYaw);
+            moveDir.applyQuaternion(q);
+            
             const speed = keys['ShiftLeft'] ? 0.35 : 0.22;
-            player.position.addScaledVector(moveVector, speed);
-            // Player faces direction of camera
-            player.rotation.y = Math.atan2(camDir.x, camDir.z);
+            player.position.addScaledVector(moveDir, speed);
+            // Player faces movement direction
+            player.rotation.y = state.cameraYaw;
         }
     }
 
-    // Camera Follow (Third Person Offset)
-    const relativeCameraOffset = new THREE.Vector3(0, 3.5, 6);
-    const cameraOffset = relativeCameraOffset.applyMatrix4(player.matrixWorld);
-    camera.position.lerp(cameraOffset, 0.1);
-    camera.lookAt(player.position.clone().add(new THREE.Vector3(0, 1.5, 0)));
+    // Camera Orbit Follow
+    const camX = player.position.x + state.cameraDist * Math.sin(state.cameraYaw) * Math.cos(state.cameraPitch);
+    const camY = player.position.y + state.cameraDist * -Math.sin(state.cameraPitch) + 1.5;
+    const camZ = player.position.z + state.cameraDist * Math.cos(state.cameraYaw) * Math.cos(state.cameraPitch);
+    
+    camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.1);
+    camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
 
     // Hurley Animation
     const idleY = 0; const idleZ = -Math.PI/6; const idleX = Math.PI/4;
@@ -218,9 +215,9 @@ function update() {
     }
 
     if (state.isSoloing) {
-        state.soloWobble += 0.15;
-        const ballPos = new THREE.Vector3(0.5, 1.0, 1.0); ballPos.applyMatrix4(player.matrixWorld);
-        ball.position.copy(ballPos); ballPhys.vel.set(0, 0, 0);
+        const ballOffset = new THREE.Vector3(0.5, 1.2, 0.8).applyQuaternion(player.quaternion);
+        ball.position.copy(player.position).add(ballOffset);
+        ballPhys.vel.set(0, 0, 0);
     } else {
         ballPhys.vel.y += ballPhys.gravity; ball.position.add(ballPhys.vel);
         if (ball.position.y < 0.15) { ball.position.y = 0.15; ballPhys.vel.y *= -ballPhys.bounce; ballPhys.vel.x *= ballPhys.friction; ballPhys.vel.z *= ballPhys.friction; }
