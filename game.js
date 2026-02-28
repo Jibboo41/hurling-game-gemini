@@ -10,7 +10,7 @@ const state = {
 
 // --- Scene Setup ---
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb); // Sky blue
+scene.background = new THREE.Color(0x87ceeb);
 scene.fog = new THREE.Fog(0x87ceeb, 0, 500);
 
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -34,29 +34,63 @@ sunLight.shadow.camera.top = 100;
 sunLight.shadow.camera.bottom = -100;
 scene.add(sunLight);
 
+// --- Procedural Grass Texture ---
+function createGrassTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 512;
+    canvas.height = 512;
+    const context = canvas.getContext('2d');
+    context.fillStyle = '#2d5e1e';
+    context.fillRect(0, 0, 512, 512);
+    
+    for (let i = 0; i < 20000; i++) {
+        context.fillStyle = `rgba(45, ${94 + Math.random() * 20}, 30, ${0.1 + Math.random() * 0.2})`;
+        context.fillRect(Math.random() * 512, Math.random() * 512, 2, 8);
+    }
+    
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
+    texture.repeat.set(20, 40);
+    return texture;
+}
+
 // --- Pitch ---
 const pitchWidth = 90;
 const pitchLength = 145;
-const grassGeo = new THREE.PlaneGeometry(pitchWidth + 20, pitchLength + 20);
-const grassMat = new THREE.MeshPhongMaterial({ color: 0x2d5e1e });
+const grassGeo = new THREE.PlaneGeometry(pitchWidth + 40, pitchLength + 40);
+const grassMat = new THREE.MeshPhongMaterial({ 
+    map: createGrassTexture(),
+    shininess: 5
+});
 const pitch = new THREE.Mesh(grassGeo, grassMat);
 pitch.rotation.x = -Math.PI / 2;
 pitch.receiveShadow = true;
 scene.add(pitch);
 
-// Pitch Lines (Simplified)
-const lineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+// Pitch Lines
+const lineMat = new THREE.MeshBasicMaterial({ color: 0xeeeeee });
 const createLine = (w, h, x, z) => {
     const geo = new THREE.PlaneGeometry(w, h);
     const mesh = new THREE.Mesh(geo, lineMat);
     mesh.rotation.x = -Math.PI / 2;
-    mesh.position.set(x, 0.01, z);
+    mesh.position.set(x, 0.02, z);
     scene.add(mesh);
 };
-createLine(pitchWidth, 0.5, 0, pitchLength/2); // End line
-createLine(pitchWidth, 0.5, 0, -pitchLength/2); // End line
-createLine(0.5, pitchLength, pitchWidth/2, 0); // Side line
-createLine(0.5, pitchLength, -pitchWidth/2, 0); // Side line
+
+// Perimeter
+createLine(pitchWidth, 0.6, 0, pitchLength/2); // End line 1
+createLine(pitchWidth, 0.6, 0, -pitchLength/2); // End line 2
+createLine(0.6, pitchLength, pitchWidth/2, 0); // Side line 1
+createLine(0.6, pitchLength, -pitchWidth/2, 0); // Side line 2
+
+// GAA Markings (13m, 20m, 45m, 65m)
+const marks = [13, 20, 45, 65];
+marks.forEach(m => {
+    createLine(pitchWidth, 0.3, 0, pitchLength/2 - m);
+    createLine(pitchWidth, 0.3, 0, -pitchLength/2 + m);
+});
+createLine(pitchWidth, 0.4, 0, 0); // Halfway line
 
 // --- Goalposts (H-shape) ---
 function createGoal(zPos) {
@@ -65,14 +99,14 @@ function createGoal(zPos) {
     const netMat = new THREE.MeshPhongMaterial({ color: 0xffffff, transparent: true, opacity: 0.3, side: THREE.DoubleSide });
 
     // Uprights
-    const uprightGeo = new THREE.CylinderGeometry(0.15, 0.15, 12);
+    const uprightGeo = new THREE.CylinderGeometry(0.15, 0.15, 14);
     const leftPost = new THREE.Mesh(uprightGeo, postMat);
-    leftPost.position.set(-3.25, 6, 0);
+    leftPost.position.set(-3.25, 7, 0);
     leftPost.castShadow = true;
     goalGroup.add(leftPost);
 
     const rightPost = new THREE.Mesh(uprightGeo, postMat);
-    rightPost.position.set(3.25, 6, 0);
+    rightPost.position.set(3.25, 7, 0);
     rightPost.castShadow = true;
     goalGroup.add(rightPost);
 
@@ -84,10 +118,11 @@ function createGoal(zPos) {
     crossbar.castShadow = true;
     goalGroup.add(crossbar);
 
-    // Net (Box behind the bottom part)
-    const netGeo = new THREE.BoxGeometry(6.5, 2.5, 2);
+    // Net
+    const netGeo = new THREE.BoxGeometry(6.5, 2.5, 2.5);
     const net = new THREE.Mesh(netGeo, netMat);
-    net.position.set(0, 1.25, zPos > 0 ? 1 : -1);
+    const offset = zPos > 0 ? 1.25 : -1.25;
+    net.position.set(0, 1.25, offset);
     goalGroup.add(net);
 
     goalGroup.position.z = zPos;
@@ -96,9 +131,10 @@ function createGoal(zPos) {
 }
 
 const goal1 = createGoal(-pitchLength / 2);
+const goal2 = createGoal(pitchLength / 2);
 
 // --- Sliotar (Ball) ---
-const ballGeo = new THREE.SphereGeometry(0.15, 16, 16);
+const ballGeo = new THREE.SphereGeometry(0.15, 32, 32);
 const ballMat = new THREE.MeshPhongMaterial({ color: 0xffffff });
 const ball = new THREE.Mesh(ballGeo, ballMat);
 ball.castShadow = true;
@@ -108,12 +144,12 @@ scene.add(ball);
 const ballPhys = {
     vel: new THREE.Vector3(0, 0, 0),
     gravity: -0.015,
-    bounce: 0.6,
-    friction: 0.98
+    bounce: 0.65,
+    friction: 0.99
 };
 
 function resetBall() {
-    ball.position.set(0, 10, 0);
+    ball.position.set(0, 5, 0);
     ballPhys.vel.set(0, 0, 0);
 }
 
@@ -136,58 +172,74 @@ document.addEventListener('keydown', (e) => {
 });
 document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-const moveSpeed = 0.2;
-const playerVelocity = new THREE.Vector3();
+const moveSpeed = 0.25;
 
-// --- Hurley (Visual representation) ---
-const hurleyGroup = new THREE.Group();
-const handleGeo = new THREE.CylinderGeometry(0.04, 0.04, 0.8);
-const handleMat = new THREE.MeshPhongMaterial({ color: 0xe3c9a6 });
-const handle = new THREE.Mesh(handleGeo, handleMat);
-hurleyGroup.add(handle);
+// --- Realistic Hurley ---
+function createHurley() {
+    const group = new THREE.Group();
+    const woodMat = new THREE.MeshPhongMaterial({ color: 0xe3c9a6 });
 
-const bossGeo = new THREE.BoxGeometry(0.08, 0.3, 0.2);
-const boss = new THREE.Mesh(bossGeo, handleMat);
-boss.position.y = -0.4;
-hurleyGroup.add(boss);
+    // Handle (Cylinder)
+    const handleGeo = new THREE.CylinderGeometry(0.035, 0.045, 1.0, 12);
+    const handle = new THREE.Mesh(handleGeo, woodMat);
+    handle.position.y = 0.4;
+    group.add(handle);
 
-hurleyGroup.position.set(0.5, -0.4, -0.8);
+    // Realistic Boss (the curved head)
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(0.1, 0);
+    shape.quadraticCurveTo(0.25, 0.05, 0.3, 0.2);
+    shape.lineTo(0.3, 0.35);
+    shape.quadraticCurveTo(0.15, 0.4, 0, 0.3);
+    shape.lineTo(0, 0);
+
+    const extrudeSettings = { depth: 0.08, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02 };
+    const bossGeo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    const boss = new THREE.Mesh(bossGeo, woodMat);
+    
+    boss.rotation.z = Math.PI / 1.1;
+    boss.rotation.y = Math.PI / 2;
+    boss.position.set(-0.04, -0.15, -0.05);
+    group.add(boss);
+
+    return group;
+}
+
+const hurleyGroup = createHurley();
+hurleyGroup.position.set(0.6, -0.5, -0.8);
 hurleyGroup.rotation.x = -Math.PI / 4;
 camera.add(hurleyGroup);
 
 function strikeBall() {
     const dist = camera.position.distanceTo(ball.position);
-    if (dist < 3) {
-        // Simple swing animation trigger (visual only for now)
-        hurleyGroup.rotation.x -= 1;
-        setTimeout(() => hurleyGroup.rotation.x += 1, 100);
+    if (dist < 3.5) {
+        // Swing animation
+        const initialRot = hurleyGroup.rotation.x;
+        hurleyGroup.rotation.x -= 0.8;
+        setTimeout(() => hurleyGroup.rotation.x = initialRot, 150);
 
-        // Physics strike
+        // Physics
         const dir = new THREE.Vector3();
         camera.getWorldDirection(dir);
-        
-        // Add a bit of upward lift
-        dir.y += 0.4;
+        dir.y += 0.35; // Loft
         dir.normalize();
         
-        const strength = 0.8;
+        const strength = 0.9;
         ballPhys.vel.copy(dir.multiplyScalar(strength));
-        state.lastStrikeTime = Date.now();
     }
 }
 
 // --- Game Loop ---
 function update() {
     if (controls.isLocked) {
-        // Movement
         const dir = new THREE.Vector3();
         if (keys['KeyW']) dir.z -= 1;
         if (keys['KeyS']) dir.z += 1;
         if (keys['KeyA']) dir.x -= 1;
         if (keys['KeyD']) dir.x += 1;
         dir.normalize().applyQuaternion(camera.quaternion);
-        dir.y = 0; // Keep on ground
-        
+        dir.y = 0;
         controls.getObject().position.add(dir.multiplyScalar(moveSpeed));
     }
 
@@ -204,25 +256,32 @@ function update() {
     }
 
     // Boundary check
-    if (Math.abs(ball.position.x) > pitchWidth/2 + 5 || Math.abs(ball.position.z) > pitchLength/2 + 5) {
+    if (Math.abs(ball.position.x) > pitchWidth/2 + 10 || Math.abs(ball.position.z) > pitchLength/2 + 10) {
         resetBall();
     }
 
-    // Scoring (Goal at -pitchLength/2)
-    const goalZ = -pitchLength / 2;
-    if (Math.abs(ball.position.z - goalZ) < 0.5 && Math.abs(ball.position.x) < 3.25) {
-        if (ball.position.y > 0.15 && ball.position.y < 2.5) {
-            // GOAL! (3 points)
-            state.score += 3;
-            document.getElementById('score').innerText = state.score;
-            resetBall();
-        } else if (ball.position.y >= 2.5 && ball.position.y < 12) {
-            // POINT! (1 point)
-            state.score += 1;
-            document.getElementById('score').innerText = state.score;
-            resetBall();
+    // Scoring
+    const checkGoal = (goalZ, isPositive) => {
+        const distZ = Math.abs(ball.position.z - goalZ);
+        if (distZ < 0.6 && Math.abs(ball.position.x) < 3.25) {
+            if (ball.position.y > 0.15 && ball.position.y < 2.5) {
+                state.score += 3;
+                updateScore();
+                resetBall();
+            } else if (ball.position.y >= 2.5 && ball.position.y < 12) {
+                state.score += 1;
+                updateScore();
+                resetBall();
+            }
         }
-    }
+    };
+
+    checkGoal(-pitchLength / 2, false);
+    checkGoal(pitchLength / 2, true);
+}
+
+function updateScore() {
+    document.getElementById('score').innerText = state.score;
 }
 
 function animate() {
@@ -231,7 +290,6 @@ function animate() {
     renderer.render(scene, camera);
 }
 
-// Handle Resize
 window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
