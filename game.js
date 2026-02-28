@@ -21,17 +21,25 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87ceeb);
 scene.fog = new THREE.Fog(0x87ceeb, 0, 800);
 
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
+// Adjusted Camera for better view
+const camera = new THREE.PerspectiveCamera(80, window.innerWidth / window.innerHeight, 0.1, 2000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 document.body.appendChild(renderer.domElement);
+
+// Camera Container for offset
+const cameraContainer = new THREE.Group();
+cameraContainer.add(camera);
+camera.position.set(0, 0.6, 1.4); // Pull camera back and up
+scene.add(cameraContainer);
 
 // --- Lighting ---
 const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
 scene.add(ambientLight);
 const sunLight = new THREE.DirectionalLight(0xffffff, 1.3);
 sunLight.position.set(100, 200, 100); sunLight.castShadow = true;
+sunLight.shadow.mapSize.width = 4096; sunLight.shadow.mapSize.height = 4096;
 scene.add(sunLight);
 
 // --- Particle System ---
@@ -113,12 +121,12 @@ function createHurley() {
     return group;
 }
 const hurleyGroup = createHurley(); 
-hurleyGroup.position.set(0.6, -0.6, -0.9); 
-hurleyGroup.rotation.set(Math.PI/4, 0, -Math.PI/6); // Initial slant
+hurleyGroup.position.set(0.6, -0.8, -0.6); // Adjusted for pulled back camera
+hurleyGroup.rotation.set(Math.PI/4, 0, -Math.PI/6);
 camera.add(hurleyGroup);
 
 // --- Inputs ---
-const controls = new PointerLockControls(camera, document.body);
+const controls = new PointerLockControls(cameraContainer, document.body);
 scene.add(controls.getObject());
 const keys = {};
 document.addEventListener('mousedown', (e) => { if(!controls.isLocked) controls.lock(); else if(e.button === 0) { state.isCharging = true; state.power = 0; state.swingState = 1; } });
@@ -126,7 +134,7 @@ document.addEventListener('mouseup', (e) => { if(state.isCharging && e.button ==
 document.addEventListener('keydown', (e) => { keys[e.code] = true; if(e.code === 'KeyR') resetBall(); if(e.code === 'KeyE') toggleSolo(); });
 document.addEventListener('keyup', (e) => { keys[e.code] = false; });
 
-function toggleSolo() { if(state.isSoloing) state.isSoloing = false; else if(camera.position.distanceTo(ball.position) < 4) { state.isSoloing = true; createParticles(ball.position.clone(), 10, 0xffffff, 0.04, 0.1); } }
+function toggleSolo() { if(state.isSoloing) state.isSoloing = false; else if(cameraContainer.position.distanceTo(ball.position) < 4) { state.isSoloing = true; createParticles(ball.position.clone(), 10, 0xffffff, 0.04, 0.1); } }
 
 function performStrike() {
     const finalPower = state.power;
@@ -134,7 +142,7 @@ function performStrike() {
     state.swingState = 2; // Swish!
 
     setTimeout(() => {
-        const dist = camera.position.distanceTo(ball.position);
+        const dist = cameraContainer.position.distanceTo(ball.position);
         if (state.isSoloing || dist < 3.5) {
             createParticles(ball.position.clone(), 15 + finalPower/4, 0xffffff, 0.04, 0.25);
             const boost = state.isSoloing ? 1.3 : 1.0;
@@ -154,7 +162,7 @@ function performStrike() {
 function update() {
     if (controls.isLocked) {
         const dir = new THREE.Vector3(); if (keys['KeyW']) dir.z -= 1; if (keys['KeyS']) dir.z += 1; if (keys['KeyA']) dir.x -= 1; if (keys['KeyD']) dir.x += 1;
-        dir.normalize().applyQuaternion(camera.quaternion); dir.y = 0;
+        dir.normalize().applyQuaternion(cameraContainer.quaternion); dir.y = 0;
         const speed = keys['ShiftLeft'] ? 0.35 : 0.22;
         controls.getObject().position.add(dir.multiplyScalar(speed));
     }
@@ -165,17 +173,14 @@ function update() {
     if (state.isCharging) {
         state.power = Math.min(state.maxPower, state.power + state.chargeRate);
         document.getElementById('power-bar').style.width = `${state.power}%`;
-        // Horizontal Wind-up (pull back to the right)
         hurleyGroup.rotation.y = THREE.MathUtils.lerp(hurleyGroup.rotation.y, Math.PI/3, 0.1);
         hurleyGroup.rotation.z = THREE.MathUtils.lerp(hurleyGroup.rotation.z, -Math.PI/2, 0.1);
         hurleyGroup.position.x = 0.8;
     } else if (state.swingState === 2) {
-        // Horizontal Snap (Across the screen to the left)
         hurleyGroup.rotation.y -= 0.6;
         hurleyGroup.rotation.z += 1.0;
         hurleyGroup.position.x -= 0.3;
     } else if (state.swingState === 0) {
-        // Return to idle
         hurleyGroup.rotation.y = THREE.MathUtils.lerp(hurleyGroup.rotation.y, idleY, 0.1);
         hurleyGroup.rotation.z = THREE.MathUtils.lerp(hurleyGroup.rotation.z, idleZ, 0.1);
         hurleyGroup.rotation.x = THREE.MathUtils.lerp(hurleyGroup.rotation.x, idleX, 0.1);
@@ -190,8 +195,8 @@ function update() {
 
     if (state.isSoloing) {
         state.soloWobble += 0.15; const wobbleX = Math.sin(state.soloWobble)*0.03; const wobbleY = Math.cos(state.soloWobble*0.8)*0.02;
-        const ballPos = new THREE.Vector3(0.4+wobbleX, -0.3+wobbleY, -0.7); ballPos.applyQuaternion(camera.quaternion);
-        ball.position.copy(camera.position).add(ballPos); ballPhys.vel.set(0, 0, 0);
+        const ballPos = new THREE.Vector3(0.4+wobbleX, -0.3+wobbleY, -0.6); ballPos.applyQuaternion(cameraContainer.quaternion);
+        ball.position.copy(cameraContainer.position).add(ballPos); ballPhys.vel.set(0, 0, 0);
     } else {
         ballPhys.vel.y += ballPhys.gravity; ball.position.add(ballPhys.vel);
         if (ball.position.y < 0.15) { ball.position.y = 0.15; ballPhys.vel.y *= -ballPhys.bounce; ballPhys.vel.x *= ballPhys.friction; ballPhys.vel.z *= ballPhys.friction; }
