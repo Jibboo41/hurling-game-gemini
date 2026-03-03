@@ -162,11 +162,18 @@ function performStrike() {
             createParticles(ball.position.clone(), 15 + finalPower/4, 0xffffff, 0.04, 0.25);
             const boost = state.isSoloing ? 1.3 : 1.0;
             const finalStrength = (0.2 + (finalPower / 100) * 1.5) * boost;
-            const dir = new THREE.Vector3(); player.getWorldDirection(dir); dir.y += 0.35; dir.normalize();
-            state.isSoloing = false; ballPhys.vel.copy(dir.multiplyScalar(finalStrength));
+            
+            // Fix: Correct forward direction from player
+            const dir = new THREE.Vector3(0, 0, 1);
+            dir.applyQuaternion(player.quaternion); // Transform to world space
+            dir.y += 0.35; // Add loft
+            dir.normalize();
+            
+            state.isSoloing = false;
+            ballPhys.vel.copy(dir.multiplyScalar(finalStrength));
             if (finalPower > 80) state.shake = 10;
         }
-    }, 150); // Match with mid-swing point
+    }, 150); 
 }
 
 // --- Loop ---
