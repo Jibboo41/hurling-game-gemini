@@ -17,7 +17,8 @@ const state = {
     shake: 0,
     cameraYaw: 0,
     cameraPitch: -0.3,
-    cameraDist: 7
+    cameraDist: 7,
+    walkTime: 0
 };
 
 // --- Scene Setup ---
@@ -65,21 +66,65 @@ function createWoodTexture() {
     const texture = new THREE.CanvasTexture(canvas); texture.wrapS = texture.wrapT = THREE.RepeatWrapping; return texture;
 }
 
-// --- Player Character ---
-function createPlayer() {
+// --- Human Player Model ---
+function createHumanPlayer() {
     const group = new THREE.Group();
-    const kitMat = new THREE.MeshPhongMaterial({ color: 0x113399 });
+    const jerseyMat = new THREE.MeshPhongMaterial({ color: 0x113399 }); // Blue Jersey
+    const shortMat = new THREE.MeshPhongMaterial({ color: 0xeeeeee }); // White Shorts
     const skinMat = new THREE.MeshPhongMaterial({ color: 0xccaa88 });
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.1, 0.4), kitMat);
-    body.position.y = 1.1; body.castShadow = true; group.add(body);
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.25, 16, 16), skinMat);
-    head.position.y = 1.9; head.castShadow = true; group.add(head);
-    const armGeo = new THREE.BoxGeometry(0.2, 0.7, 0.2);
-    const leftArm = new THREE.Mesh(armGeo, skinMat); leftArm.position.set(-0.4, 1.3, 0); group.add(leftArm);
-    const rightArm = new THREE.Mesh(armGeo, skinMat); rightArm.position.set(0.4, 1.3, 0.2); group.add(rightArm);
+    const sockMat = new THREE.MeshPhongMaterial({ color: 0xeeeeee });
+
+    // Torso
+    const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.35), jerseyMat);
+    torso.position.y = 1.35;
+    torso.castShadow = true;
+    group.add(torso);
+
+    // Head
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), skinMat);
+    head.position.y = 1.85;
+    head.castShadow = true;
+    group.add(head);
+
+    // Arms
+    const armGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.6);
+    const leftArm = new THREE.Mesh(armGeo, skinMat);
+    leftArm.position.set(-0.4, 1.4, 0.1);
+    leftArm.rotation.z = Math.PI / 8;
+    group.add(leftArm);
+
+    const rightArm = new THREE.Mesh(armGeo, skinMat);
+    rightArm.position.set(0.4, 1.4, 0.1);
+    rightArm.rotation.z = -Math.PI / 8;
+    group.add(rightArm);
+
+    // Legs (Animated)
+    const legGeo = new THREE.BoxGeometry(0.22, 0.7, 0.22);
+    const leftLegGroup = new THREE.Group();
+    const leftLeg = new THREE.Mesh(legGeo, shortMat);
+    leftLeg.position.y = -0.35;
+    const leftSock = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.3, 0.23), sockMat);
+    leftSock.position.y = -0.55;
+    leftLegGroup.add(leftLeg);
+    leftLegGroup.add(leftSock);
+    leftLegGroup.position.set(-0.18, 1.0, 0);
+    group.add(leftLegGroup);
+    group.userData.leftLeg = leftLegGroup;
+
+    const rightLegGroup = new THREE.Group();
+    const rightLeg = new THREE.Mesh(legGeo, shortMat);
+    rightLeg.position.y = -0.35;
+    const rightSock = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.3, 0.23), sockMat);
+    rightSock.position.y = -0.55;
+    rightLegGroup.add(rightLeg);
+    rightLegGroup.add(rightSock);
+    rightLegGroup.position.set(0.18, 1.0, 0);
+    group.add(rightLegGroup);
+    group.userData.rightLeg = rightLegGroup;
+
     return group;
 }
-const player = createPlayer();
+const player = createHumanPlayer();
 scene.add(player);
 
 // --- Hurley ---
@@ -93,7 +138,7 @@ function createHurley() {
     return group;
 }
 const hurleyGroup = createHurley();
-hurleyGroup.position.set(0.5, 1.0, 0.5);
+hurleyGroup.position.set(0.3, 1.2, 0.4); // Positioned in front of torso
 player.add(hurleyGroup);
 
 // --- Stadium & Pitch ---
@@ -138,7 +183,7 @@ const ball = new THREE.Mesh(new THREE.SphereGeometry(0.15, 32, 32), new THREE.Me
 const ballPhys = { vel: new THREE.Vector3(0, 0, 0), gravity: -0.015, bounce: 0.65, friction: 0.985 };
 function resetBall() { state.isSoloing = false; ball.position.set(0, 5, 0); ballPhys.vel.set(0, 0, 0); }
 
-// --- Controls ---
+// --- Inputs & Controls ---
 const controls = new PointerLockControls(camera, document.body);
 const keys = {};
 document.addEventListener('mousedown', (e) => { if(!controls.isLocked) controls.lock(); else if(e.button === 0) { state.isCharging = true; state.power = 0; state.swingState = 1; } });
@@ -150,30 +195,18 @@ document.addEventListener('mousemove', (e) => { if (controls.isLocked) { state.c
 function toggleSolo() { if(state.isSoloing) state.isSoloing = false; else if(player.position.distanceTo(ball.position) < 3) { state.isSoloing = true; createParticles(ball.position.clone(), 10, 0xffffff, 0.04, 0.1); } }
 
 function performStrike() {
-    const finalPower = state.power;
-    state.isCharging = false;
-    state.swingState = 2; // Swish!
-    state.swingTime = 0;
-
-    // Actual ball hit calculation
+    const finalPower = state.power; state.isCharging = false; state.swingState = 2; state.swingTime = 0;
     setTimeout(() => {
         const dist = player.position.distanceTo(ball.position);
         if (state.isSoloing || dist < 3.5) {
             createParticles(ball.position.clone(), 15 + finalPower/4, 0xffffff, 0.04, 0.25);
             const boost = state.isSoloing ? 1.3 : 1.0;
             const finalStrength = (0.2 + (finalPower / 100) * 1.5) * boost;
-            
-            // Fix: Invert Z to ensure it fires forward away from player face
-            const dir = new THREE.Vector3(0, 0, -1);
-            dir.applyQuaternion(player.quaternion); // Transform to world space
-            dir.y += 0.35; // Add loft
-            dir.normalize();
-            
-            state.isSoloing = false;
-            ballPhys.vel.copy(dir.multiplyScalar(finalStrength));
+            const dir = new THREE.Vector3(0, 0, -1); dir.applyQuaternion(player.quaternion); dir.y += 0.35; dir.normalize();
+            state.isSoloing = false; ballPhys.vel.copy(dir.multiplyScalar(finalStrength));
             if (finalPower > 80) state.shake = 10;
         }
-    }, 150); 
+    }, 150);
 }
 
 // --- Loop ---
@@ -188,6 +221,15 @@ function update() {
             const speed = keys['ShiftLeft'] ? 0.35 : 0.22;
             player.position.addScaledVector(moveDir, speed);
             player.rotation.y = state.cameraYaw;
+            
+            // Walking Animation
+            state.walkTime += speed * 2;
+            player.userData.leftLeg.rotation.x = Math.sin(state.walkTime) * 0.5;
+            player.userData.rightLeg.rotation.x = Math.sin(state.walkTime + Math.PI) * 0.5;
+        } else {
+            // Idle Legs
+            player.userData.leftLeg.rotation.x = THREE.MathUtils.lerp(player.userData.leftLeg.rotation.x, 0, 0.1);
+            player.userData.rightLeg.rotation.x = THREE.MathUtils.lerp(player.userData.rightLeg.rotation.x, 0, 0.1);
         }
     }
 
@@ -198,37 +240,29 @@ function update() {
     camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.1);
     camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
 
-    // Controlled Hurley Animation Logic
+    // Hurley Animation
     const idleY = 0; const idleZ = -Math.PI/6; const idleX = Math.PI/4;
     const windupY = Math.PI/2.5; const windupZ = -Math.PI/1.5;
     const followY = -Math.PI/2; const followZ = Math.PI/2;
-
     if (state.isCharging) {
         state.power = Math.min(state.maxPower, state.power + state.chargeRate);
         document.getElementById('power-bar').style.width = `${state.power}%`;
-        // Lerp to windup position based on power
         const t = state.power / 100;
         hurleyGroup.rotation.y = THREE.MathUtils.lerp(idleY, windupY, t);
         hurleyGroup.rotation.z = THREE.MathUtils.lerp(idleZ, windupZ, t);
     } else if (state.swingState === 2) {
-        state.swingTime += 0.12; // Swing speed
-        if (state.swingTime >= 1) {
-            state.swingTime = 1;
-            state.swingState = 0;
-            document.getElementById('power-bar').style.width = '0%';
-        }
-        // Swing from Windup to Follow-Through
+        state.swingTime += 0.12;
+        if (state.swingTime >= 1) { state.swingTime = 1; state.swingState = 0; document.getElementById('power-bar').style.width = '0%'; }
         hurleyGroup.rotation.y = THREE.MathUtils.lerp(windupY, followY, state.swingTime);
         hurleyGroup.rotation.z = THREE.MathUtils.lerp(windupZ, followZ, state.swingTime);
     } else {
-        // Return to idle
         hurleyGroup.rotation.y = THREE.MathUtils.lerp(hurleyGroup.rotation.y, idleY, 0.1);
         hurleyGroup.rotation.z = THREE.MathUtils.lerp(hurleyGroup.rotation.z, idleZ, 0.1);
         hurleyGroup.rotation.x = THREE.MathUtils.lerp(hurleyGroup.rotation.x, idleX, 0.1);
     }
 
     if (state.isSoloing) {
-        const ballOffset = new THREE.Vector3(0.5, 1.2, 0.8).applyQuaternion(player.quaternion);
+        const ballOffset = new THREE.Vector3(0.5, 1.3, 0.9).applyQuaternion(player.quaternion);
         ball.position.copy(player.position).add(ballOffset);
         ballPhys.vel.set(0, 0, 0);
     } else {
@@ -236,7 +270,6 @@ function update() {
         if (ball.position.y < 0.15) { ball.position.y = 0.15; ballPhys.vel.y *= -ballPhys.bounce; ballPhys.vel.x *= ballPhys.friction; ballPhys.vel.z *= ballPhys.friction; }
     }
 
-    // AI & Scoring
     const targetX = THREE.MathUtils.clamp(ball.position.x, -3.0, 3.0);
     if (keeper.position.x < targetX) keeper.position.x += 0.07; if (keeper.position.x > targetX) keeper.position.x -= 0.07;
     if (!state.isSoloing && ball.position.distanceTo(keeper.position) < 0.8 && ballPhys.vel.z < 0) {
