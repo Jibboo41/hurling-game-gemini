@@ -12,9 +12,9 @@ const state = {
     chargeRate: 2.2,
     isSoloing: false,
     soloWobble: 0,
-    swingState: 0,
+    swingState: 0, // 0: idle, 1: charging, 2: swinging
+    swingTime: 0,
     shake: 0,
-    // Camera State
     cameraYaw: 0,
     cameraPitch: -0.3,
     cameraDist: 7
@@ -36,6 +36,7 @@ const ambientLight = new THREE.AmbientLight(0xffffff, 0.8);
 scene.add(ambientLight);
 const sunLight = new THREE.DirectionalLight(0xffffff, 1.3);
 sunLight.position.set(100, 200, 100); sunLight.castShadow = true;
+sunLight.shadow.mapSize.width = 2048; sunLight.shadow.mapSize.height = 2048;
 scene.add(sunLight);
 
 // --- Particle System ---
@@ -137,27 +138,24 @@ const ball = new THREE.Mesh(new THREE.SphereGeometry(0.15, 32, 32), new THREE.Me
 const ballPhys = { vel: new THREE.Vector3(0, 0, 0), gravity: -0.015, bounce: 0.65, friction: 0.985 };
 function resetBall() { state.isSoloing = false; ball.position.set(0, 5, 0); ballPhys.vel.set(0, 0, 0); }
 
-// --- Inputs & Controls ---
+// --- Controls ---
 const controls = new PointerLockControls(camera, document.body);
 const keys = {};
 document.addEventListener('mousedown', (e) => { if(!controls.isLocked) controls.lock(); else if(e.button === 0) { state.isCharging = true; state.power = 0; state.swingState = 1; } });
 document.addEventListener('mouseup', (e) => { if(state.isCharging && e.button === 0) { performStrike(); } });
 document.addEventListener('keydown', (e) => { keys[e.code] = true; if(e.code === 'KeyR') resetBall(); if(e.code === 'KeyE') toggleSolo(); });
 document.addEventListener('keyup', (e) => { keys[e.code] = false; });
-
-// Use mousemove directly for camera rotation to avoid conflict with PointerLockControls manual rotation
-document.addEventListener('mousemove', (e) => {
-    if (controls.isLocked) {
-        state.cameraYaw -= e.movementX * 0.003;
-        state.cameraPitch -= e.movementY * 0.003;
-        state.cameraPitch = Math.max(-1.4, Math.min(0.2, state.cameraPitch)); // Clamp pitch
-    }
-});
+document.addEventListener('mousemove', (e) => { if (controls.isLocked) { state.cameraYaw -= e.movementX * 0.003; state.cameraPitch -= e.movementY * 0.003; state.cameraPitch = Math.max(-1.4, Math.min(0.2, state.cameraPitch)); } });
 
 function toggleSolo() { if(state.isSoloing) state.isSoloing = false; else if(player.position.distanceTo(ball.position) < 3) { state.isSoloing = true; createParticles(ball.position.clone(), 10, 0xffffff, 0.04, 0.1); } }
 
 function performStrike() {
-    const finalPower = state.power; state.isCharging = false; state.swingState = 2;
+    const finalPower = state.power;
+    state.isCharging = false;
+    state.swingState = 2; // Swish!
+    state.swingTime = 0;
+
+    // Actual ball hit calculation
     setTimeout(() => {
         const dist = player.position.distanceTo(ball.position);
         if (state.isSoloing || dist < 3.5) {
@@ -168,8 +166,7 @@ function performStrike() {
             state.isSoloing = false; ballPhys.vel.copy(dir.multiplyScalar(finalStrength));
             if (finalPower > 80) state.shake = 10;
         }
-        setTimeout(() => { state.swingState = 0; document.getElementById('power-bar').style.width = '0%'; }, 400);
-    }, 60);
+    }, 150); // Match with mid-swing point
 }
 
 // --- Loop ---
@@ -177,38 +174,47 @@ function update() {
     if (controls.isLocked) {
         const moveDir = new THREE.Vector3();
         if (keys['KeyW']) moveDir.z -= 1; if (keys['KeyS']) moveDir.z += 1; if (keys['KeyA']) moveDir.x -= 1; if (keys['KeyD']) moveDir.x += 1;
-        
         if(moveDir.length() > 0) {
             moveDir.normalize();
-            // Rotate moveDir to match cameraYaw
             const q = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), state.cameraYaw);
             moveDir.applyQuaternion(q);
-            
             const speed = keys['ShiftLeft'] ? 0.35 : 0.22;
             player.position.addScaledVector(moveDir, speed);
-            // Player faces movement direction
             player.rotation.y = state.cameraYaw;
         }
     }
 
-    // Camera Orbit Follow
+    // Camera Orbit
     const camX = player.position.x + state.cameraDist * Math.sin(state.cameraYaw) * Math.cos(state.cameraPitch);
     const camY = player.position.y + state.cameraDist * -Math.sin(state.cameraPitch) + 1.5;
     const camZ = player.position.z + state.cameraDist * Math.cos(state.cameraYaw) * Math.cos(state.cameraPitch);
-    
     camera.position.lerp(new THREE.Vector3(camX, camY, camZ), 0.1);
     camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
 
-    // Hurley Animation
+    // Controlled Hurley Animation Logic
     const idleY = 0; const idleZ = -Math.PI/6; const idleX = Math.PI/4;
+    const windupY = Math.PI/2.5; const windupZ = -Math.PI/1.5;
+    const followY = -Math.PI/2; const followZ = Math.PI/2;
+
     if (state.isCharging) {
         state.power = Math.min(state.maxPower, state.power + state.chargeRate);
         document.getElementById('power-bar').style.width = `${state.power}%`;
-        hurleyGroup.rotation.y = THREE.MathUtils.lerp(hurleyGroup.rotation.y, Math.PI/2.5, 0.1);
-        hurleyGroup.rotation.z = THREE.MathUtils.lerp(hurleyGroup.rotation.z, -Math.PI/1.5, 0.1);
+        // Lerp to windup position based on power
+        const t = state.power / 100;
+        hurleyGroup.rotation.y = THREE.MathUtils.lerp(idleY, windupY, t);
+        hurleyGroup.rotation.z = THREE.MathUtils.lerp(idleZ, windupZ, t);
     } else if (state.swingState === 2) {
-        hurleyGroup.rotation.y -= 0.7; hurleyGroup.rotation.z += 1.2;
+        state.swingTime += 0.12; // Swing speed
+        if (state.swingTime >= 1) {
+            state.swingTime = 1;
+            state.swingState = 0;
+            document.getElementById('power-bar').style.width = '0%';
+        }
+        // Swing from Windup to Follow-Through
+        hurleyGroup.rotation.y = THREE.MathUtils.lerp(windupY, followY, state.swingTime);
+        hurleyGroup.rotation.z = THREE.MathUtils.lerp(windupZ, followZ, state.swingTime);
     } else {
+        // Return to idle
         hurleyGroup.rotation.y = THREE.MathUtils.lerp(hurleyGroup.rotation.y, idleY, 0.1);
         hurleyGroup.rotation.z = THREE.MathUtils.lerp(hurleyGroup.rotation.z, idleZ, 0.1);
         hurleyGroup.rotation.x = THREE.MathUtils.lerp(hurleyGroup.rotation.x, idleX, 0.1);
