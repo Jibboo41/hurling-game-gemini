@@ -74,59 +74,45 @@ function createHumanPlayer() {
     const skinMat = new THREE.MeshPhongMaterial({ color: 0xccaa88 });
     const sockMat = new THREE.MeshPhongMaterial({ color: 0xeeeeee });
 
-    // Torso
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.35), jerseyMat);
     torso.position.y = 1.35; torso.castShadow = true; group.add(torso);
 
-    // Head
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), skinMat);
     head.position.y = 1.85; head.castShadow = true; group.add(head);
 
-    // --- Arms with Elbows & Hands ---
     const createArm = (isLeft) => {
         const armGroup = new THREE.Group();
         const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.35), skinMat);
-        upper.position.y = -0.17;
-        armGroup.add(upper);
-
+        upper.position.y = -0.17; armGroup.add(upper);
         const lowerGroup = new THREE.Group();
         lowerGroup.position.y = -0.35;
         const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.35), skinMat);
-        lower.position.y = -0.17;
-        lowerGroup.add(lower);
-
+        lower.position.y = -0.17; lowerGroup.add(lower);
         const hand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.12, 0.12), skinMat);
-        hand.position.y = -0.35;
-        lowerGroup.add(hand);
-
+        hand.position.y = -0.35; lowerGroup.add(hand);
         armGroup.add(lowerGroup);
-        lowerGroup.rotation.x = -Math.PI/3; // Bent at elbow
+        lowerGroup.rotation.x = -Math.PI/2.5; // Bend elbows forward
         return armGroup;
     };
 
     const leftArm = createArm(true);
-    leftArm.position.set(-0.35, 1.6, 0.1);
-    leftArm.rotation.set(0.2, 0, 0.4);
+    leftArm.position.set(-0.35, 1.6, 0.05);
+    leftArm.rotation.set(-0.4, 0, 0.3); // Rotated forward
     group.add(leftArm);
-    group.userData.leftArm = leftArm;
 
     const rightArm = createArm(false);
-    rightArm.position.set(0.35, 1.6, 0.1);
-    rightArm.rotation.set(-0.5, -0.4, -0.4);
+    rightArm.position.set(0.35, 1.6, 0.05);
+    rightArm.rotation.set(-0.4, 0, -0.3); // Rotated forward
     group.add(rightArm);
-    group.userData.rightArm = rightArm;
 
-    // Legs
-    const legGeo = new THREE.BoxGeometry(0.22, 0.7, 0.22);
     const createLeg = (x) => {
         const legGroup = new THREE.Group();
-        const leg = new THREE.Mesh(legGeo, shortMat); leg.position.y = -0.35;
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.7, 0.22), shortMat); leg.position.y = -0.35;
         const sock = new THREE.Mesh(new THREE.BoxGeometry(0.23, 0.3, 0.23), sockMat); sock.position.y = -0.55;
         legGroup.add(leg); legGroup.add(sock); legGroup.position.set(x, 1.0, 0); return legGroup;
     };
     group.userData.leftLeg = createLeg(-0.18); group.add(group.userData.leftLeg);
     group.userData.rightLeg = createLeg(0.18); group.add(group.userData.rightLeg);
-
     return group;
 }
 const player = createHumanPlayer();
@@ -139,12 +125,14 @@ function createHurley() {
     const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.048, 0.4, 16), gripMat); grip.position.y = 0.7; group.add(grip);
     const shape = new THREE.Shape(); shape.moveTo(0, 0); shape.lineTo(0.12, 0); shape.quadraticCurveTo(0.28, 0.06, 0.34, 0.22); shape.lineTo(0.34, 0.42); shape.quadraticCurveTo(0.18, 0.48, 0, 0.35); shape.lineTo(0, 0);
     const boss = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.07, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02 }), woodMat);
-    boss.rotation.z = -Math.PI/1.05; boss.rotation.y = -Math.PI/2; boss.position.set(0.035, -0.15, 0.05); group.add(boss);
+    // Correct Orientation: Scoop facing front and up
+    boss.rotation.z = Math.PI/1.05; boss.rotation.y = Math.PI/2; 
+    boss.position.set(-0.035, -0.15, -0.05); group.add(boss);
     return group;
 }
 const hurleyGroup = createHurley();
-hurleyGroup.position.set(0.2, 1.05, 0.65); // Gripped by hands
-hurleyGroup.rotation.set(Math.PI/4, 0, -Math.PI/12);
+hurleyGroup.position.set(0.0, 1.0, 0.7); // Centered in hands
+hurleyGroup.rotation.set(Math.PI/3.5, 0, 0);
 player.add(hurleyGroup);
 
 // --- Stadium & Pitch ---
@@ -244,7 +232,7 @@ function update() {
     camera.lookAt(player.position.x, player.position.y + 1.5, player.position.z);
 
     // Hurley Animation
-    const idleY = 0; const idleZ = -Math.PI/12; const idleX = Math.PI/4;
+    const idleY = 0; const idleZ = -Math.PI/12; const idleX = Math.PI/3.5;
     const windupY = Math.PI/2.5; const windupZ = -Math.PI/1.5;
     const followY = -Math.PI/2; const followZ = Math.PI/2;
     if (state.isCharging) {
@@ -265,7 +253,7 @@ function update() {
     }
 
     if (state.isSoloing) {
-        const ballOffset = new THREE.Vector3(0.5, 1.3, 0.9).applyQuaternion(player.quaternion);
+        const ballOffset = new THREE.Vector3(0, 1.25, 0.95).applyQuaternion(player.quaternion);
         ball.position.copy(player.position).add(ballOffset);
         ballPhys.vel.set(0, 0, 0);
     } else {
@@ -273,7 +261,6 @@ function update() {
         if (ball.position.y < 0.15) { ball.position.y = 0.15; ballPhys.vel.y *= -ballPhys.bounce; ballPhys.vel.x *= ballPhys.friction; ballPhys.vel.z *= ballPhys.friction; }
     }
 
-    // AI & Scoring
     const targetX = THREE.MathUtils.clamp(ball.position.x, -3.0, 3.0);
     if (keeper.position.x < targetX) keeper.position.x += 0.07; if (keeper.position.x > targetX) keeper.position.x -= 0.07;
     if (!state.isSoloing && ball.position.distanceTo(keeper.position) < 0.8 && ballPhys.vel.z < 0) {
