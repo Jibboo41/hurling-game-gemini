@@ -163,8 +163,8 @@ function performStrike() {
             const boost = state.isSoloing ? 1.3 : 1.0;
             const finalStrength = (0.2 + (finalPower / 100) * 1.5) * boost;
             
-            // Fix: Correct forward direction from player
-            const dir = new THREE.Vector3(0, 0, 1);
+            // Fix: Invert Z to ensure it fires forward away from player face
+            const dir = new THREE.Vector3(0, 0, -1);
             dir.applyQuaternion(player.quaternion); // Transform to world space
             dir.y += 0.35; // Add loft
             dir.normalize();
