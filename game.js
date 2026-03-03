@@ -74,12 +74,15 @@ function createHumanPlayer() {
     const skinMat = new THREE.MeshPhongMaterial({ color: 0xccaa88 });
     const sockMat = new THREE.MeshPhongMaterial({ color: 0xeeeeee });
 
+    // Torso
     const torso = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.7, 0.35), jerseyMat);
     torso.position.y = 1.35; torso.castShadow = true; group.add(torso);
 
+    // Head
     const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 16, 16), skinMat);
     head.position.y = 1.85; head.castShadow = true; group.add(head);
 
+    // Arms (Connected at FRONT of torso)
     const createArm = (isLeft) => {
         const armGroup = new THREE.Group();
         const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.35), skinMat);
@@ -96,15 +99,16 @@ function createHumanPlayer() {
     };
 
     const leftArm = createArm(true);
-    leftArm.position.set(-0.35, 1.6, 0.05);
-    leftArm.rotation.set(-0.4, 0, 0.3); // Rotated forward
+    leftArm.position.set(-0.35, 1.6, -0.1); // Z is -0.1 (Front)
+    leftArm.rotation.set(-0.4, 0, 0.3);
     group.add(leftArm);
 
     const rightArm = createArm(false);
-    rightArm.position.set(0.35, 1.6, 0.05);
-    rightArm.rotation.set(-0.4, 0, -0.3); // Rotated forward
+    rightArm.position.set(0.35, 1.6, -0.1); // Z is -0.1 (Front)
+    rightArm.rotation.set(-0.4, 0, -0.3);
     group.add(rightArm);
 
+    // Legs
     const createLeg = (x) => {
         const legGroup = new THREE.Group();
         const leg = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.7, 0.22), shortMat); leg.position.y = -0.35;
@@ -125,13 +129,13 @@ function createHurley() {
     const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.048, 0.048, 0.4, 16), gripMat); grip.position.y = 0.7; group.add(grip);
     const shape = new THREE.Shape(); shape.moveTo(0, 0); shape.lineTo(0.12, 0); shape.quadraticCurveTo(0.28, 0.06, 0.34, 0.22); shape.lineTo(0.34, 0.42); shape.quadraticCurveTo(0.18, 0.48, 0, 0.35); shape.lineTo(0, 0);
     const boss = new THREE.Mesh(new THREE.ExtrudeGeometry(shape, { depth: 0.07, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02 }), woodMat);
-    // Correct Orientation: Scoop facing front and up
-    boss.rotation.z = Math.PI/1.05; boss.rotation.y = Math.PI/2; 
-    boss.position.set(-0.035, -0.15, -0.05); group.add(boss);
+    // Correct Orientation for scoop facing forward and up
+    boss.rotation.z = -Math.PI/1.05; boss.rotation.y = -Math.PI/2; 
+    boss.position.set(0.035, -0.15, 0.05); group.add(boss);
     return group;
 }
 const hurleyGroup = createHurley();
-hurleyGroup.position.set(0.0, 1.0, 0.7); // Centered in hands
+hurleyGroup.position.set(0.0, 1.0, -0.7); // -Z (In front of player)
 hurleyGroup.rotation.set(Math.PI/3.5, 0, 0);
 player.add(hurleyGroup);
 
@@ -253,7 +257,7 @@ function update() {
     }
 
     if (state.isSoloing) {
-        const ballOffset = new THREE.Vector3(0, 1.25, 0.95).applyQuaternion(player.quaternion);
+        const ballOffset = new THREE.Vector3(0, 1.25, -0.95).applyQuaternion(player.quaternion);
         ball.position.copy(player.position).add(ballOffset);
         ballPhys.vel.set(0, 0, 0);
     } else {
